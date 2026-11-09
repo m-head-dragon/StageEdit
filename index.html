@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<link rel="manifest" href="manifest.json">
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>高機能マップチップメーカー</title>
+  <style>
+    :root {
+      --bg-dark: #121216;
+      --bg-panel: #1e1e26;
+      --bg-card: #282834;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --danger: #ef4444;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --border: #374151;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* 市松模様 */
+    .checkerboard {
+      background-color: #ffffff;
+      background-image: 
+        linear-gradient(45deg, #e5e5e5 25%, transparent 25%), 
+        linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #e5e5e5 75%), 
+        linear-gradient(-45deg, transparent 75%, #e5e5e5 75%);
+      background-size: 10px 10px;
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+    }
+
+    /* ヘッダー */
+    header {
+      background: var(--bg-panel);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .header-btns { display: flex; gap: 6px; align-items: center; }
+
+    button {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 11px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    button:active {
+      opacity: 0.7;
+      transform: scale(0.96);
+    }
+    .btn-primary { background: var(--accent); color: white; border: none; font-weight: 600; }
+    .btn-danger { background: rgba(239,68,68,0.15); color: var(--danger); border-color: rgba(239,68,68,0.3); }
+
+    .main-app {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 1. マップエリア */
+    .map-section {
+      height: 44%;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      background: #16161d;
+      border-bottom: 2px solid var(--border);
+      position: relative;
+    }
+
+    .map-toolbar {
+      background: var(--bg-panel);
+      padding: 5px 8px;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-shrink: 0;
+      z-index: 25;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tool-btn {
+      padding: 5px 9px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      border-radius: 6px;
+    }
+    .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); font-weight: bold; }
+
+    /* マップ左上の戻る・やり直し丸ボタン */
+    .map-floating-history {
+      position: absolute;
+      top: 48px;
+      left: 10px;
+      display: flex;
+      gap: 6px;
+      z-index: 20;
+    }
+    .floating-circle-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(26, 26, 36, 0.95);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.6);
+      cursor: pointer;
+    }
+    .floating-circle-btn:active { background: var(--accent); transform: scale(0.92); }
+
+    /* ビューポート（余白付き） */
+    .map-viewport {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 70px 20px 60px 20px;
+      box-sizing: border-box;
+      position: relative;
+      touch-action: none; /* スマホでの不要な引っ張り更新を防止 */
+    }
+    #test-map-canvas {
+      image-rendering: pixelated;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      flex-shrink: 0;
+      will-change: transform;
+      cursor: crosshair;
+      touch-action: none; /* Android Chromeでタッチ操作を確実にキャンバスへ通す */
+    }
+
+    /* 2. チップ一覧エリア */
+    .chips-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-dark);
+      overflow: hidden;
+    }
+
+    /* チップ上部バー */
+    .chips-control-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 5px;
+      padding: 5px 8px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-shrink: 0;
+      -webkit-overflow-scrolling: touch;
+    }
+    .select-actions {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .chips-control-bar .tool-btn {
+      padding: 4px 7px;
+      font-size: 0.72rem;
+    }
+    .btn-toggle-multi.active {
+      background: #059669;
+      color: white;
+      border-color: #059669;
+      font-weight: bold;
+    }
+
+    .tag-filter-bar {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      flex: 1;
+      align-items: center;
+      -webkit-overflow-scrolling: touch;
+    }
+    .filter-pill {
+      padding: 3px 8px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .filter-pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+    .chips-grid-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+      position: relative;
+      -webkit-overflow-scrolling: touch;
+    }
+    .chips-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      gap: 8px;
+    }
+
+    .chip-add-card {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      background: rgba(255,255,255,0.03);
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .chip-item {
+      position: relative;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .chip-item.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+    }
+    .chip-item canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      object-fit: contain;
+      pointer-events: none;
+    }
+
+    .chip-check-badge {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: var(--accent);
+      color: white;
+      border-radius: 4px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .chip-item.selected .chip-check-badge { display: flex; }
+
+    /* 最下部: タグ入力バー */
+    .tag-bottom-bar {
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .tag-badges-scroll {
+      display: flex;
+      gap: 5px;
+      overflow-x: auto;
+      white-space: nowrap;
+      min-height: 22px;
+      align-items: center;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #374151;
+      color: #93c5fd;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+    }
+    .tag-input-row { display: flex; gap: 5px; }
+    .tag-input-row input { flex: 1; padding: 6px 8px; font-size: 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
+    .preset-tags-scroll {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    .preset-btn {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      background: var(--bg-card);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    /* トースト */
+    .toast-msg {
+      position: fixed;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(16, 185, 129, 0.95);
+      color: white;
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.25s;
+      pointer-events: none;
+    }
+    .toast-msg.show { opacity: 1; }
+
+    /* モーダル */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 16px;
+    }
+    .modal-card {
+      background: var(--bg-panel);
+      width: 100%;
+      max-width: 340px;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border: 1px solid var(--border);
+    }
+    .modal-title { font-size: 0.95rem; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <div id="toast" class="toast-msg"></div>
+
+  <!-- ファイル選択 -->
+  <input type="file" id="file-input-image" accept="image/*" multiple style="display:none;" onchange="handleImageFileSelect(this)">
+  <input type="file" id="file-input-json" accept=".json" style="display:none;" onchange="handleJsonFileSelect(this)">
+
+  <!-- ヘッダー -->
+  <header>
+    <h1>🗺️ マップチップ</h1>
+    <div class="header-btns">
+      <button class="btn-primary" onclick="triggerImagePicker()">＋ 読込</button>
+      <button onclick="openModal('settings-modal')">⚙️ 保存/設定</button>
+    </div>
+  </header>
+
+  <!-- メイン画面 -->
+  <div class="main-app">
+
+    <!-- 1. マップエリア -->
+    <div class="map-section">
+      <div class="map-toolbar">
+        <button class="tool-btn active" id="tool-pen" onclick="setMapTool('pen')">✏️ ペン</button>
+        <button class="tool-btn" id="tool-pan" onclick="setMapTool('pan')">✋ 移動</button>
+        <button class="tool-btn" id="tool-eraser" onclick="setMapTool('eraser')">🧹 消しゴム</button>
+        <button class="tool-btn" id="tool-bucket" onclick="setMapTool('bucket')">🪣 バケツ</button>
+        <button class="tool-btn" id="tool-picker" onclick="setMapTool('picker')">💉 スポイト</button>
+        
+        <div style="flex:1;"></div>
+        <button class="tool-btn" onclick="openMapSizeModal()">📐 <span id="map-size-label">16×16</span></button>
+        <button class="tool-btn btn-danger" onclick="clearMap()">🗑️</button>
+      </div>
+
+      <!-- マップ左上の戻る・やり直し丸ボタン -->
+      <div class="map-floating-history">
+        <button class="floating-circle-btn" onclick="undoMap()" title="元に戻す">↩️</button>
+        <button class="floating-circle-btn" onclick="redoMap()" title="やり直す">↪️</button>
+      </div>
+
+      <!-- ビューポート -->
+      <div class="map-viewport" id="map-viewport">
+        <canvas id="test-map-canvas" class="checkerboard"></canvas>
+      </div>
+    </div>
+
+    <!-- 2. チップ一覧エリア -->
+    <div class="chips-section">
+      <div class="chips-control-bar">
+        <div class="select-actions">
+          <button class="tool-btn" onclick="triggerImagePicker()" style="font-weight:bold; color:var(--accent);">読込</button>
+          <button class="tool-btn btn-toggle-multi" id="btn-toggle-multi" onclick="toggleMultiSelect()">複数選択</button>
+          <button class="tool-btn" onclick="selectAllTiles()">全選択</button>
+          <button class="tool-btn" onclick="deselectAllTiles()">解除</button>
+          <button class="tool-btn btn-danger" onclick="deleteSelectedTiles()">削除</button>
+        </div>
+        <div class="tag-filter-bar" id="filter-tag-container">
+          <span class="filter-pill active" onclick="filterByTag('ALL')">すべて</span>
+        </div>
+      </div>
+
+      <div class="chips-grid-scroll">
+        <div class="chips-grid" id="chips-grid"></div>
+      </div>
+
+      <!-- 最下部: タグ入力パネル -->
+      <div class="tag-bottom-bar">
+        <div class="tag-badges-scroll" id="selected-tags-list">
+          <span style="font-size:0.75rem; color:var(--text-muted);">チップを選択してください</span>
+        </div>
+        <div class="tag-input-row">
+          <input type="text" id="new-tag-input" placeholder="選択中チップにタグ追加..." onkeydown="if(event.key==='Enter')addNewTag()">
+          <button class="btn-primary" onclick="addNewTag()">追加</button>
+        </div>
+        <div class="preset-tags-scroll">
+          <button class="preset-btn" onclick="addTagToSelected('地面')">#地面</button>
+          <button class="preset-btn" onclick="addTagToSelected('壁')">#壁</button>
+          <button class="preset-btn" onclick="addTagToSelected('水')">#水</button>
+          <button class="preset-btn" onclick="addTagToSelected('通行不可')">#通行不可</button>
+          <button class="preset-btn" onclick="addTagToSelected('草木')">#草木</button>
+          <button class="preset-btn" onclick="addTagToSelected('装飾')">#装飾</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- マップサイズモーダル -->
+  <div class="modal-overlay" id="map-size-modal">
+    <div class="modal-card">
+      <div class="modal-title">📐 マップサイズの変更</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <label>横マス: <input type="number" id="input-map-cols" min="4" max="64" value="16" style="width:64px; padding:4px;"></label>
+        <label>縦マス: <input type="number" id="input-map-rows" min="4" max="64" value="16" style="width:64px; padding:4px;"></label>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button onclick="setModalSizeInputs(10, 10)">10×10</button>
+        <button onclick="setModalSizeInputs(12, 12)">12×12</button>
+        <button onclick="setModalSizeInputs(16, 16)">16×16</button>
+        <button onclick="setModalSizeInputs(20, 20)">20×20</button>
+        <button onclick="setModalSizeInputs(24, 24)">24×24</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btn-primary" style="flex:1;" onclick="applyMapSize()">適用</button>
+        <button style="flex:1;" onclick="closeModal('map-size-modal')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 設定・保存モーダル -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal-card">
+      <div class="modal-title">⚙️ 保存 / 設定</div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.85rem;">画像分割サイズ:</span>
+        <select id="tile-size-select" onchange="changeTileSize(this.value)">
+          <option value="16">16 × 16 px</option>
+          <option value="32" selected>32 × 32 px</option>
+          <option value="48">48 × 48 px</option>
+          <option value="64">64 × 64 px</option>
+        </select>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--border);">
+
+      <button class="btn-primary" onclick="exportProjectJSON()">💾 プロジェクト保存 (JSON)</button>
+      <button onclick="exportTilesetPNG()">🖼️ タイルセット画像保存 (PNG)</button>
+      <button onclick="exportMapPNG()">🗺️ 作成マップ画像保存 (PNG)</button>
+
+      <hr style="border:none; border-top:1px solid var(--border);">
+
+      <button onclick="triggerJsonPicker()">📂 プロジェクト読込 (JSON)</button>
+      <button onclick="closeModal('settings-modal')" style="margin-top:6px;">閉じる</button>
+    </div>
+  </div>
+
+  <!-- Android長押し保存用モーダル -->
+  <div class="modal-overlay" id="image-preview-modal">
+    <div class="modal-card" style="text-align:center;">
+      <div class="modal-title" id="preview-modal-title">画像保存</div>
+      <p style="font-size:0.75rem; color:#93c5fd; margin-bottom:6px;">
+        ※下の画像を<b>長押しして「画像を保存」</b>を選択してください
+      </p>
+      <div style="background:#fff; padding:6px; border-radius:6px; max-height:260px; overflow:auto;">
+        <img id="preview-image-tag" style="max-width:100%; height:auto; image-rendering:pixelated; display:block; margin:0 auto;">
+      </div>
+      <button onclick="closeModal('image-preview-modal')" style="margin-top:6px;">閉じる</button>
+    </div>
+  </div>
+
+  <script>
+    // --- 状態管理 ---
+    let tileSize = 32;
+    let tiles = [];
+    let nextTileId = 1;
+    let selectedTileIds = new Set();
+    let activePaintTileId = null;
+    let isMultiSelectMode = false;
+    let currentFilterTag = 'ALL';
+
+    let currentMapTool = 'pen';
+    let mapCols = 16;
+    let mapRows = 16;
+    let testMap = new Array(mapCols * mapRows).fill(null);
+
+    let panX = 0;
+    let panY = 0;
+
+    const mapUndoStack = [];
+    const mapRedoStack = [];
+
+    // DOM要素
+    const mapCanvas = document.getElementById('test-map-canvas');
+    const mapCtx = mapCanvas.getContext('2d');
+    const mapViewport = document.getElementById('map-viewport');
+    const chipsGrid = document.getElementById('chips-grid');
+    const filterTagContainer = document.getElementById('filter-tag-container');
+    const selectedTagsList = document.getElementById('selected-tags-list');
+    const newTagInput = document.getElementById('new-tag-input');
+    const mapSizeLabel = document.getElementById('map-size-label');
+    const toast = document.getElementById('toast');
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // 初期サンプルチップ生成
+    function createSampleTiles() {
+      const samples = [
+        { color: '#22c55e', name: '草' },
+        { color: '#3b82f6', name: '水' },
+        { color: '#a16207', name: '土' },
+        { color: '#64748b', name: '石' }
+      ];
+      samples.forEach(s => {
+        const c = document.createElement('canvas');
+        c.width = tileSize;
+        c.height = tileSize;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = s.color;
+        ctx.fillRect(0, 0, tileSize, tileSize);
+        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.strokeRect(1, 1, tileSize - 2, tileSize - 2);
+
+        tiles.push({
+          id: nextTileId++,
+          canvas: c,
+          tags: new Set([s.name])
+        });
+      });
+      activePaintTileId = tiles[0].id;
+      selectedTileIds.add(tiles[0].id);
+    }
+
+    function setupMapCanvas() {
+      mapCanvas.width = mapCols * tileSize;
+      mapCanvas.height = mapRows * tileSize;
+
+      const screenWidth = Math.min(window.innerWidth - 32, 400);
+      mapCanvas.style.width = screenWidth + 'px';
+      mapCanvas.style.height = ((screenWidth / mapCols) * mapRows) + 'px';
+
+      mapSizeLabel.textContent = mapCols + '×' + mapRows;
+      updateCanvasTransform();
+      renderTestMap();
+    }
+
+    function clampPan(x, y) {
+      const vpW = mapViewport.clientWidth || window.innerWidth;
+      const vpH = mapViewport.clientHeight || (window.innerHeight * 0.44);
+      const cvW = mapCanvas.offsetWidth || 300;
+      const cvH = mapCanvas.offsetHeight || 300;
+
+      const padX = 50;
+      const padY = 55;
+
+      const limitX = Math.max(80, Math.abs(vpW - cvW) / 2 + padX);
+      const limitY = Math.max(80, Math.abs(vpH - cvH) / 2 + padY);
+
+      return {
+        x: Math.max(-limitX, Math.min(limitX, x)),
+        y: Math.max(-limitY, Math.min(limitY, y))
+      };
+    }
+
+    function updateCanvasTransform() {
+      mapCanvas.style.transform = `translate(${panX}px, ${panY}px)`;
+    }
+
+    // --- Undo / Redo ---
+    function pushMapHistory() {
+      mapUndoStack.push([...testMap]);
+      if (mapUndoStack.length > 30) mapUndoStack.shift();
+      mapRedoStack.length = 0;
+    }
+
+    function undoMap() {
+      if (mapUndoStack.length === 0) {
+        showToast('これ以上戻せません');
+        return;
+      }
+      mapRedoStack.push([...testMap]);
+      testMap = mapUndoStack.pop();
+      renderTestMap();
+      showToast('元に戻しました ↩️');
+    }
+
+    function redoMap() {
+      if (mapRedoStack.length === 0) {
+        showToast('やり直す履歴がありません');
+        return;
+      }
+      mapUndoStack.push([...testMap]);
+      testMap = mapRedoStack.pop();
+      renderTestMap();
+      showToast('やり直しました ↪️');
+    }
+
+    // --- ツールバー ---
+    function setMapTool(toolName) {
+      currentMapTool = toolName;
+      document.querySelectorAll('.map-toolbar .tool-btn').forEach(b => {
+        if (b.id && b.id.startsWith('tool-')) b.classList.remove('active');
+      });
+      const activeBtn = document.getElementById('tool-' + toolName);
+      if (activeBtn) activeBtn.classList.add('active');
+      if (toolName === 'pan') {
+        showToast('✋ 移動モード: スワイプでマップを動かせます');
+      }
+    }
+
+    function clearMap() {
+      if (confirm('マップをすべて消去しますか？')) {
+        pushMapHistory();
+        testMap.fill(null);
+        renderTestMap();
+        showToast('マップを消去しました');
+      }
+    }
+
+    function openMapSizeModal() {
+      document.getElementById('input-map-cols').value = mapCols;
+      document.getElementById('input-map-rows').value = mapRows;
+      openModal('map-size-modal');
+    }
+
+    function setModalSizeInputs(cols, rows) {
+      document.getElementById('input-map-cols').value = cols;
+      document.getElementById('input-map-rows').value = rows;
+    }
+
+    function applyMapSize() {
+      const c = parseInt(document.getElementById('input-map-cols').value) || 16;
+      const r = parseInt(document.getElementById('input-map-rows').value) || 16;
+      const newCols = Math.max(4, Math.min(64, c));
+      const newRows = Math.max(4, Math.min(64, r));
+
+      pushMapHistory();
+
+      const newMap = new Array(newCols * newRows).fill(null);
+      for (let row = 0; row < Math.min(mapRows, newRows); row++) {
+        for (let col = 0; col < Math.min(mapCols, newCols); col++) {
+          newMap[row * newCols + col] = testMap[row * mapCols + col];
+        }
+      }
+
+      mapCols = newCols;
+      mapRows = newRows;
+      testMap = newMap;
+      panX = 0;
+      panY = 0;
+      setupMapCanvas();
+      closeModal('map-size-modal');
+      showToast('サイズを変更しました: ' + mapCols + '×' + mapRows);
+    }
+
+    function changeTileSize(val) {
+      tileSize = parseInt(val) || 32;
+      setupMapCanvas();
+    }
+
+    // --- チップ操作 ---
+    function toggleMultiSelect() {
+      isMultiSelectMode = !isMultiSelectMode;
+      document.getElementById('btn-toggle-multi').classList.toggle('active', isMultiSelectMode);
+      showToast(isMultiSelectMode ? '複数選択: ON' : '複数選択: OFF');
+    }
+
+    function selectAllTiles() {
+      tiles.forEach(t => selectedTileIds.add(t.id));
+      renderAll();
+      showToast('全チップを選択しました (' + tiles.length + '個)');
+    }
+
+    function deselectAllTiles() {
+      selectedTileIds.clear();
+      renderAll();
+      showToast('選択を解除しました');
+    }
+
+    function deleteSelectedTiles() {
+      if (selectedTileIds.size === 0) {
+        showToast('削除するチップを選択してください');
+        return;
+      }
+      if (!confirm('選択した ' + selectedTileIds.size + ' 個のチップを削除しますか？')) return;
+
+      pushMapHistory();
+      tiles = tiles.filter(t => !selectedTileIds.has(t.id));
+      for (let i = 0; i < testMap.length; i++) {
+        if (selectedTileIds.has(testMap[i])) testMap[i] = null;
+      }
+      selectedTileIds.clear();
+      activePaintTileId = tiles.length > 0 ? tiles[0].id : null;
+      if (activePaintTileId) selectedTileIds.add(activePaintTileId);
+
+      renderAll();
+      renderTestMap();
+      showToast('チップを削除しました');
+    }
+
+    function filterByTag(tag) {
+      currentFilterTag = tag;
+      if (tag !== 'ALL') {
+        selectedTileIds.clear();
+        tiles.forEach(t => {
+          if (t.tags.has(tag)) selectedTileIds.add(t.id);
+        });
+        if (selectedTileIds.size > 0) activePaintTileId = Array.from(selectedTileIds)[0];
+        showToast('#' + tag + ' のチップを一括選択しました');
+      }
+      renderAll();
+    }
+
+    function addNewTag() {
+      const val = newTagInput.value;
+      if (val) {
+        addTagToSelected(val);
+        newTagInput.value = '';
+      }
+    }
+
+    function addTagToSelected(tag) {
+      tag = tag.trim().replace(/^#/, '');
+      if (!tag || selectedTileIds.size === 0) {
+        showToast('先にチップを選択してください');
+        return;
+      }
+      tiles.forEach(t => {
+        if (selectedTileIds.has(t.id)) t.tags.add(tag);
+      });
+      renderAll();
+      showToast(selectedTileIds.size + '個のチップに #' + tag + ' を付与しました');
+    }
+
+    // --- ファイル読み込み ---
+    function triggerImagePicker() {
+      document.getElementById('file-input-image').click();
+    }
+
+    function triggerJsonPicker() {
+      document.getElementById('file-input-json').click();
+    }
+
+    function handleImageFileSelect(input) {
+      if (input.files && input.files.length > 0) {
+        loadTileImages(input.files);
+        input.value = '';
+      }
+    }
+
+    function handleJsonFileSelect(input) {
+      if (input.files && input.files.length > 0) {
+        importProjectJSON(input.files[0]);
+        input.value = '';
+        closeModal('settings-modal');
+      }
+    }
+
+    function loadTileImages(files) {
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => sliceAndAddImage(img);
+          img.onerror = () => alert('画像を読み込めませんでした');
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function sliceAndAddImage(img) {
+      if (!img.width || !img.height) return;
+
+      const cols = Math.floor(img.width / tileSize);
+      const rows = Math.floor(img.height / tileSize);
+      const prevCount = tiles.length;
+
+      if (cols === 0 || rows === 0) {
+        addSingleTile(img, 0, 0, img.width, img.height);
+      } else {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            addSingleTile(img, c * tileSize, r * tileSize, tileSize, tileSize);
+          }
+        }
+      }
+
+      const added = tiles.length - prevCount;
+      if (activePaintTileId === null && tiles.length > 0) {
+        activePaintTileId = tiles[0].id;
+        selectedTileIds.add(tiles[0].id);
+      }
+
+      renderAll();
+      showToast(added + ' 個のチップを読み込みました！');
+    }
+
+    function addSingleTile(img, sx, sy, sw, sh) {
+      const canvas = document.createElement('canvas');
+      canvas.width = tileSize;
+      canvas.height = tileSize;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, tileSize, tileSize);
+
+      tiles.push({
+        id: nextTileId++,
+        canvas: canvas,
+        tags: new Set()
+      });
+    }
+
+    // --- レンダリング ---
+    function renderAll() {
+      renderChipsGrid();
+      renderTagFilters();
+      renderSelectedTags();
+    }
+
+    function renderChipsGrid() {
+      chipsGrid.innerHTML = '';
+
+      const addCard = document.createElement('div');
+      addCard.className = 'chip-add-card';
+      addCard.innerHTML = '<span style="font-size:1.3rem;">＋</span>追加';
+      addCard.onclick = triggerImagePicker;
+      chipsGrid.appendChild(addCard);
+
+      const filtered = tiles.filter(tile => {
+        if (currentFilterTag === 'ALL') return true;
+        return tile.tags.has(currentFilterTag);
+      });
+
+      filtered.forEach(tile => {
+        const isSelected = selectedTileIds.has(tile.id);
+        const card = document.createElement('div');
+        card.className = 'chip-item checkerboard' + (isSelected ? ' selected' : '');
+
+        const previewCanvas = document.createElement('canvas');
+        previewCanvas.width = tileSize;
+        previewCanvas.height = tileSize;
+        previewCanvas.getContext('2d').drawImage(tile.canvas, 0, 0);
+
+        const checkBadge = document.createElement('span');
+        checkBadge.className = 'chip-check-badge';
+        checkBadge.textContent = '✓';
+
+        card.appendChild(previewCanvas);
+        card.appendChild(checkBadge);
+
+        card.onclick = () => {
+          if (isMultiSelectMode) {
+            if (selectedTileIds.has(tile.id)) {
+              selectedTileIds.delete(tile.id);
+            } else {
+              selectedTileIds.add(tile.id);
+              activePaintTileId = tile.id;
+            }
+          } else {
+            selectedTileIds.clear();
+            selectedTileIds.add(tile.id);
+            activePaintTileId = tile.id;
+          }
+          renderChipsGrid();
+          renderSelectedTags();
+        };
+
+        chipsGrid.appendChild(card);
+      });
+    }
+
+    function renderTagFilters() {
+      const allTags = new Set();
+      tiles.forEach(t => t.tags.forEach(tag => allTags.add(tag)));
+
+      filterTagContainer.innerHTML = '';
+
+      const allBadge = document.createElement('span');
+      allBadge.className = 'filter-pill' + (currentFilterTag === 'ALL' ? ' active' : '');
+      allBadge.textContent = 'すべて';
+      allBadge.onclick = () => filterByTag('ALL');
+      filterTagContainer.appendChild(allBadge);
+
+      allTags.forEach(tag => {
+        const badge = document.createElement('span');
+        badge.className = 'filter-pill' + (currentFilterTag === tag ? ' active' : '');
+        badge.textContent = '#' + tag;
+        badge.onclick = () => filterByTag(tag);
+        filterTagContainer.appendChild(badge);
+      });
+    }
+
+    function renderSelectedTags() {
+      selectedTagsList.innerHTML = '';
+
+      if (selectedTileIds.size === 0) {
+        selectedTagsList.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted);">チップを選択してください</span>';
+        return;
+      }
+
+      const selectedTiles = tiles.filter(t => selectedTileIds.has(t.id));
+      const tagCountMap = new Map();
+      selectedTiles.forEach(t => {
+        t.tags.forEach(tag => {
+          tagCountMap.set(tag, (tagCountMap.get(tag) || 0) + 1);
+        });
+      });
+
+      const countInfo = document.createElement('span');
+      countInfo.style.fontSize = '0.75rem';
+      countInfo.style.fontWeight = 'bold';
+      countInfo.style.color = '#60a5fa';
+      countInfo.textContent = '選択: ' + selectedTiles.length + '個';
+      selectedTagsList.appendChild(countInfo);
+
+      if (tagCountMap.size === 0) {
+        const noTag = document.createElement('span');
+        noTag.style.fontSize = '0.75rem';
+        noTag.style.color = 'var(--text-muted)';
+        noTag.textContent = '(タグなし)';
+        selectedTagsList.appendChild(noTag);
+        return;
+      }
+
+      tagCountMap.forEach((count, tag) => {
+        const badge = document.createElement('span');
+        badge.className = 'tag-badge';
+        const isAll = (count === selectedTiles.length);
+        badge.innerHTML = '<span>#' + tag + (isAll ? '' : ' (' + count + ')') + '</span><span style="font-weight:bold; cursor:pointer;" onclick="removeTagFromSelected(\'' + tag + '\')">×</span>';
+        selectedTagsList.appendChild(badge);
+      });
+    }
+
+    function removeTagFromSelected(tag) {
+      tiles.filter(t => selectedTileIds.has(t.id)).forEach(t => t.tags.delete(tag));
+      renderAll();
+    }
+
+    // --- マップ描画 ---
+    function renderTestMap() {
+      mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+      mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      for (let x = 0; x <= mapCols; x++) {
+        mapCtx.beginPath();
+        mapCtx.moveTo(x * tileSize, 0);
+        mapCtx.lineTo(x * tileSize, mapRows * tileSize);
+        mapCtx.stroke();
+      }
+      for (let y = 0; y <= mapRows; y++) {
+        mapCtx.beginPath();
+        mapCtx.moveTo(0, y * tileSize);
+        mapCtx.lineTo(mapCols * tileSize, y * tileSize);
+        mapCtx.stroke();
+      }
+
+      testMap.forEach((tileId, idx) => {
+        if (tileId === null) return;
+        const tile = tiles.find(t => t.id === tileId);
+        if (!tile) return;
+
+        const x = (idx % mapCols) * tileSize;
+        const y = Math.floor(idx / mapCols) * tileSize;
+        mapCtx.drawImage(tile.canvas, x, y);
+      });
+    }
+
+    function redrawSingleGridCell(col, row) {
+      const idx = row * mapCols + col;
+      const x = col * tileSize;
+      const y = row * tileSize;
+
+      mapCtx.clearRect(x, y, tileSize, tileSize);
+      mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      mapCtx.strokeRect(x, y, tileSize, tileSize);
+
+      const tileId = testMap[idx];
+      if (tileId !== null) {
+        const tile = tiles.find(t => t.id === tileId);
+        if (tile) {
+          mapCtx.drawImage(tile.canvas, x, y);
+        }
+      }
+    }
+
+    function getMapGridCoord(clientX, clientY) {
+      const rect = mapCanvas.getBoundingClientRect();
+      const col = Math.floor((clientX - rect.left) / (rect.width / mapCols));
+      const row = Math.floor((clientY - rect.top) / (rect.height / mapRows));
+      if (col >= 0 && col < mapCols && row >= 0 && row < mapRows) {
+        return { col, row };
+      }
+      return null;
+    }
+
+    function floodFillMap(startCol, startRow, targetId) {
+      const startIndex = startRow * mapCols + startCol;
+      const originalId = testMap[startIndex];
+      if (originalId === targetId) return;
+
+      pushMapHistory();
+
+      const queue = [[startCol, startRow]];
+      while (queue.length > 0) {
+        const [c, r] = queue.pop();
+        if (c < 0 || c >= mapCols || r < 0 || r >= mapRows) continue;
+
+        const idx = r * mapCols + c;
+        if (testMap[idx] === originalId) {
+          testMap[idx] = targetId;
+          queue.push([c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]);
+        }
+      }
+      renderTestMap();
+    }
+
+    let strokeHistoryPushed = false;
+
+    function applyMapTool(col, row) {
+      const idx = row * mapCols + col;
+      const paintTileId = activePaintTileId || (tiles[0] ? tiles[0].id : null);
+
+      if (currentMapTool === 'pen') {
+        if (paintTileId !== null) {
+          if (testMap[idx] === paintTileId) return;
+          if (!strokeHistoryPushed) {
+            pushMapHistory();
+            strokeHistoryPushed = true;
+          }
+          testMap[idx] = paintTileId;
+          redrawSingleGridCell(col, row);
+        } else {
+          showToast('下のチップを選択してください');
+        }
+      } else if (currentMapTool === 'eraser') {
+        if (testMap[idx] === null) return;
+        if (!strokeHistoryPushed) {
+          pushMapHistory();
+          strokeHistoryPushed = true;
+        }
+        testMap[idx] = null;
+        redrawSingleGridCell(col, row);
+      } else if (currentMapTool === 'bucket') {
+        if (paintTileId !== null) {
+          floodFillMap(col, row, paintTileId);
+        } else {
+          showToast('下のチップを選択してください');
+        }
+      } else if (currentMapTool === 'picker') {
+        const pickedTileId = testMap[idx];
+        if (pickedTileId !== null) {
+          activePaintTileId = pickedTileId;
+          selectedTileIds.clear();
+          selectedTileIds.add(pickedTileId);
+          renderChipsGrid();
+          renderSelectedTags();
+          setMapTool('pen');
+          showToast('チップをスポイトしました！');
+        }
+      }
+    }
+
+    // --- Android/スマホ対応ポインターイベント ---
+    let isInteracting = false;
+    let isPanning = false;
+    let startClientX = 0;
+    let startClientY = 0;
+    let startPanX = 0;
+    let startPanY = 0;
+
+    mapCanvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { mapCanvas.setPointerCapture(e.pointerId); } catch(err){}
+      isInteracting = true;
+      strokeHistoryPushed = false;
+      startClientX = e.clientX;
+      startClientY = e.clientY;
+
+      if (currentMapTool === 'pan') {
+        isPanning = true;
+        startPanX = panX;
+        startPanY = panY;
+        return;
+      }
+
+      const coord = getMapGridCoord(e.clientX, e.clientY);
+      if (coord) {
+        applyMapTool(coord.col, coord.row);
+      }
+    }, { passive: false });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isInteracting) return;
+
+      if (currentMapTool === 'pan' && isPanning) {
+        const rawX = startPanX + (e.clientX - startClientX);
+        const rawY = startPanY + (e.clientY - startClientY);
+        const clamped = clampPan(rawX, rawY);
+        panX = clamped.x;
+        panY = clamped.y;
+        updateCanvasTransform();
+        return;
+      }
+
+      if (currentMapTool === 'bucket' || currentMapTool === 'picker') return;
+
+      const coord = getMapGridCoord(e.clientX, e.clientY);
+      if (coord) {
+        applyMapTool(coord.col, coord.row);
+      }
+    });
+
+    function handlePointerUp(e) {
+      if (isInteracting && e && e.pointerId) {
+        try { mapCanvas.releasePointerCapture(e.pointerId); } catch(err){}
+      }
+      isInteracting = false;
+      isPanning = false;
+      strokeHistoryPushed = false;
+    }
+
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    // --- モーダル制御 ---
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'flex';
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
+
+    function showImagePreview(dataUrl, title) {
+      document.getElementById('preview-modal-title').textContent = title;
+      document.getElementById('preview-image-tag').src = dataUrl;
+      openModal('image-preview-modal');
+    }
+
+    // --- 保存・読み込み処理 ---
+    function exportProjectJSON() {
+      const project = {
+        tileSize,
+        mapCols,
+        mapRows,
+        tiles: tiles.map(t => ({
+          id: t.id,
+          tags: Array.from(t.tags),
+          image: t.canvas.toDataURL('image/png')
+        })),
+        map: testMap
+      };
+      const jsonStr = JSON.stringify(project, null, 2);
+
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(jsonStr).then(() => {
+          showToast('JSONをクリップボードにコピーしました！');
+        }).catch(() => {});
+      }
+
+      try {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'tileset_project_' + Date.now() + '.json';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 200);
+      } catch (err) {}
+    }
+
+    // 1. タイルセット画像保存 (PNG)
+    function exportTilesetPNG() {
+      if (tiles.length === 0) {
+        showToast('タイルが存在しません');
+        return;
+      }
+      const sheetCols = Math.min(16, tiles.length);
+      const sheetRows = Math.ceil(tiles.length / sheetCols);
+      
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = sheetCols * tileSize;
+      outCanvas.height = sheetRows * tileSize;
+      const ctx = outCanvas.getContext('2d');
+
+      tiles.forEach((t, i) => {
+        const col = i % sheetCols;
+        const row = Math.floor(i / sheetCols);
+        ctx.drawImage(t.canvas, col * tileSize, row * tileSize);
+      });
+
+      const dataUrl = outCanvas.toDataURL('image/png');
+      
+      // 自動ダウンロード
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = 'tileset_' + Date.now() + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 200);
+
+      // Android Chromeで保存しやすいように長押しモーダルも表示
+      closeModal('settings-modal');
+      showImagePreview(dataUrl, '🖼️ タイルセット画像保存');
+    }
+
+    // 2. 作成マップ画像保存 (PNG)
+    function exportMapPNG() {
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = mapCols * tileSize;
+      outCanvas.height = mapRows * tileSize;
+      const ctx = outCanvas.getContext('2d');
+
+      testMap.forEach((tileId, idx) => {
+        if (tileId === null) return;
+        const tile = tiles.find(t => t.id === tileId);
+        if (!tile) return;
+        const x = (idx % mapCols) * tileSize;
+        const y = Math.floor(idx / mapCols) * tileSize;
+        ctx.drawImage(tile.canvas, x, y);
+      });
+
+      const dataUrl = outCanvas.toDataURL('image/png');
+
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = 'map_' + Date.now() + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 200);
+
+      closeModal('settings-modal');
+      showImagePreview(dataUrl, '🗺️ 作成マップ画像保存');
+    }
+
+    // 3. プロジェクトJSON読込
+    function importProjectJSON(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.tiles || !data.map) {
+            alert('無効なプロジェクトファイルです');
+            return;
+          }
+
+          tileSize = data.tileSize || 32;
+          mapCols = data.mapCols || 16;
+          mapRows = data.mapRows || 16;
+          testMap = data.map;
+          tiles = [];
+          nextTileId = 1;
+
+          document.getElementById('tile-size-select').value = String(tileSize);
+
+          let loadedCount = 0;
+          data.tiles.forEach(tData => {
+            const img = new Image();
+            img.onload = () => {
+              const c = document.createElement('canvas');
+              c.width = tileSize;
+              c.height = tileSize;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+
+              tiles.push({
+                id: tData.id,
+                canvas: c,
+                tags: new Set(tData.tags || [])
+              });
+
+              if (tData.id >= nextTileId) nextTileId = tData.id + 1;
+              loadedCount++;
+
+              if (loadedCount === data.tiles.length) {
+                tiles.sort((a, b) => a.id - b.id);
+                selectedTileIds.clear();
+                if (tiles.length > 0) {
+                  activePaintTileId = tiles[0].id;
+                  selectedTileIds.add(tiles[0].id);
+                }
+                setupMapCanvas();
+                renderAll();
+                showToast('プロジェクトを読み込みました！');
+              }
+            };
+            img.src = tData.image;
+          });
+        } catch(err) {
+          alert('プロジェクトの読み込みに失敗しました');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // --- 初期実行 ---
+    window.addEventListener('DOMContentLoaded', () => {
+      createSampleTiles();
+      setupMapCanvas();
+      renderAll();
+    });
+  </script>
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
+</body>
+</html>
